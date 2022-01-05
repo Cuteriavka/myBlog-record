@@ -1,0 +1,128 @@
+version: '3.4'
+
+networks:
+  default:
+  halonet:
+  ncnet:
+  cheveretoNet:
+
+# 自定义网络
+
+services:
+  halo:
+    restart: always
+    image: halohub/halo:latest
+    container_name: halo
+    ports:
+      - 8090:8090
+    volumes:
+      - ./.halo:/root/.halo 
+    networks:            
+      - default
+      - halonet
+
+  clouddb: 
+    image: mariadb:latest
+    restart: always
+    container_name: clouddb
+    expose:
+      - "3306"
+    volumes:
+      - ./cloudDb:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ncRoot12345678
+      MYSQL_DATABASE: nextcloudDB
+      MYSQL_USER: ncDBuser
+      MYSQL_PASSWORD: user12345678
+    command: [--transaction-isolation=READ-COMMITTED,--binlog-format=ROW,--innodb-file-per-table=1,--skip-innodb-read-only-compressed]
+    networks:
+      - ncnet 
+    # to avoid innodb bugs
+
+  cache:
+    image: redis
+    restart: always
+    expose:
+     - "6379"
+    volumes:
+     - ./cache:/data
+    command: redis-server --requirepass 'redis12345678'
+    networks:
+        - ncnet
+
+  nextcloud:
+    image: nextcloud:fpm
+    restart: always
+    volumes:
+     - ./nextcloud/html:/var/www/html
+     - ./nextcloud/data:/var/www/html/data
+     - ./nextcloud/config:/var/www/html/config
+     - ./nextcloud/custom_apps:/var/www/html/custom_apps
+    links:
+     - clouddb:clouddb
+     - cache:cache
+    depends_on:
+     - clouddb
+     - cache
+    networks:
+      - default
+      - ncnet
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+     - ./nextcloud/html:/var/www/cloud
+     - ./wordpress/html:/var/www/blog
+     - ./chevereto/html:/var/www/pictures
+     - ./nginx:/etc/nginx/conf.d
+     - ./nginx:/etc/nginx/ssl_certs
+     - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - nextcloud
+      - wordpress
+      - chevereto
+    restart: always
+    networks:
+        - default
+  
+  chevereto:
+    depends_on:
+      - cheveretodb 
+    image: nmtan/chevereto
+    restart: always
+    networks:
+      - cheveretoNet
+    environment:
+      CHEVERETO_DB_HOST: cheveretodb:3306
+      CHEVERETO_DB_USERNAME: chevereto
+      CHEVERETO_DB_PASSWORD: chevereto12345678
+      CHEVERETO_DB_NAME: cheveretoDB
+      CHEVERETO_DB_PREFIX: chv_
+    links:
+      - cheveretodb:cheveretodb  
+    volumes:
+      - ./chevereto/html:/var/www/html/image
+      - ./chevephpconf/php.ini:/usr/local/etc/php/conf.d/php.ini
+      
+    ports:
+      - 8082:80
+    
+  cheveretodb:
+    image: mysql:5.7
+    container_name: cheveretodb
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - ./cheveretodb:/var/lib/mysql:rw
+    restart: always
+    expose:
+      - "3306"
+    networks:
+      - cheveretoNet
+    environment:
+      MYSQL_ROOT_PASSWORD: cheveroot12345678
+      MYSQL_DATABASE: cheveretoDB
+      MYSQL_USER: chevereto
+      MYSQL_PASSWORD: chevereto12345678
